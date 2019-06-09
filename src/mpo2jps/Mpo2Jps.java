@@ -10,6 +10,10 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
@@ -21,13 +25,16 @@ import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
 public class Mpo2Jps implements ActionListener {
-
+    ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     private static final String MPO2JPS_CONVERTER_PROPERTIES = "MPO2JPS.properties";
     private JButton btnSelectDir;
     private JButton btnConvert;
     private JFrame frame;
     private JTextField text;
     private JLabel lblState;
+    
+    private File[] mpoFiles;
+    private int errors=0;
 
     public Mpo2Jps() throws FileNotFoundException, IOException {
         initGui();
@@ -138,20 +145,30 @@ public class Mpo2Jps implements ActionListener {
     private void convert() {
         setCursor(Cursor.WAIT_CURSOR);
 
-        File[] mpoFiles = new File(text.getText())
+         mpoFiles = new File(text.getText())
                 .listFiles((File dir, String name) -> name.toLowerCase().endsWith("mpo"));
 
+        
         for (int t = 0; t < mpoFiles.length; t++) {
             setProgress(t + " /" + mpoFiles.length);
 
-            new SideBySideConverter(mpoFiles[t]);
-
-            setProgress((t + 1) + " /" + mpoFiles.length);
+            final int _t=t;
+            
+            
+            
+            executor.execute(() -> {
+                try {
+                    new SideBySideConverter(this, mpoFiles[_t]);
+                } catch (IOException ex) {
+                    errors++;
+                    processingDone(false);
+                    System.err.println(mpoFiles[_t].getName() + " konnte nicht konvertiert werden!");
+                }
+            });
+            
         }
 
-        JOptionPane.showMessageDialog(frame, "Fertig.");
-
-        setCursor(Cursor.DEFAULT_CURSOR);
+        
     }
 
     private void setProgress(final String state) {
@@ -180,6 +197,25 @@ public class Mpo2Jps implements ActionListener {
         }
 
         new Mpo2Jps();
+    }
+    
+    int done = 0;
+    int skipped=0;
+    public void processingDone(boolean fileSkipped){
+        if (fileSkipped)
+            skipped++;
+        
+        done++;
+        setProgress(done + " /" + mpoFiles.length);
+
+        if (done == mpoFiles.length) {
+            setCursor(Cursor.DEFAULT_CURSOR);
+            
+            JOptionPane.showMessageDialog(frame, "Fertig. (" + errors + " Fehler, "+ skipped+ " schon vorhanden)");
+            done = 0;
+            errors =0;
+            skipped=0;
+        }
     }
 
 }
